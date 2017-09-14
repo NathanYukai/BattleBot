@@ -13,6 +13,7 @@ namespace BattleshipBot
         private IGridSquare lastTarget;
         private static int _boardSize = 100;
         private Item[] battleMap;
+        private int[] likeliHood = Enumerable.Repeat(0, _boardSize).ToArray();
 
         private List<int> enemyLeftLength;
         private System.Random rnd;
@@ -21,29 +22,70 @@ namespace BattleshipBot
         private Orientation curOrientation;
         private State fightState;
         private IGridSquare firstHit;
+        private int lengthCount;
 
         public IEnumerable<IShipPosition> GetShipPositions()
         {
             enemyLeftLength = new List<int> { 5, 4, 3, 3, 2 };
             lastTarget = null;
             fightState = State.Explore;
-            rnd = new System.Random();
+            rnd = new Random();
             battleMap = Enumerable.Repeat(Item.Fog, _boardSize).ToArray();
 
-            var airCraft = GetShipPosition('B', 4, 'B', 8);
-            var battleship = GetShipPosition('C', 2, 'F', 2);
-            var destroyer = GetShipPosition('E', 6, 'G', 6);
-            var submarine = GetShipPosition('H', 2, 'H', 4);
-            var patrol = GetShipPosition('I', 10, 'J', 10);
+            var airCrafts = new List<IShipPosition>()
+            {
+                GetShipPosition('A', 4, 'A', 8),
+                GetShipPosition('A', 1, 'A', 5),
+                GetShipPosition('A', 5, 'A', 9),
+                GetShipPosition('B', 6, 'B', 10)
+            };
+
+
+            var battleships = new List<IShipPosition>()
+            {
+                GetShipPosition('C', 1, 'F', 1),
+                GetShipPosition('C', 2, 'F', 2),
+                GetShipPosition('C', 3, 'F', 3),
+                GetShipPosition('C', 4, 'F', 4),
+            };
+
+            var destroyers = new List<IShipPosition>()
+            {
+                GetShipPosition('E', 6, 'G', 6),
+                GetShipPosition('E', 7, 'G', 7),
+                GetShipPosition('E', 8, 'G', 8),
+                GetShipPosition('E', 9, 'G', 9),
+            };
+
+            var submarines = new List<IShipPosition>
+            {
+                GetShipPosition('H', 2, 'H', 4),
+                GetShipPosition('I', 2, 'I', 4),
+                GetShipPosition('J', 2, 'J', 4)
+            };
+
+            var patrols = new List<IShipPosition>
+            {
+                GetShipPosition('I', 10, 'J', 10),
+                GetShipPosition('I', 9, 'J', 9),
+                GetShipPosition('I', 8, 'J', 8),
+                GetShipPosition('I', 7, 'J', 7),
+
+            };
 
             return new List<IShipPosition>
                   {
-                    GetShipPosition('B', 4, 'B', 8), // Aircraft Carrier
-				    GetShipPosition('C', 2, 'F', 2), // Battleship
-				    GetShipPosition('E', 6, 'G', 6), // Destroyer
-				    GetShipPosition('H', 2, 'H', 4), // Submarine
-				    GetShipPosition('I', 10, 'J', 10)  // Patrol boat
-				  };
+                    SelectPositionForShip(airCrafts),
+                    SelectPositionForShip(battleships),
+                      SelectPositionForShip(submarines),
+                      SelectPositionForShip(destroyers),
+                    SelectPositionForShip(patrols)
+                  };
+        }
+
+        private IShipPosition SelectPositionForShip(List<IShipPosition> positions)
+        {
+            return positions[rnd.Next(positions.Count)];
         }
 
         private static ShipPosition GetShipPosition(char startRow, int startColumn, char endRow, int endColumn)
@@ -111,6 +153,8 @@ namespace BattleshipBot
             int idx = GridToMap(square);
             if (wasHit)
             {
+                likeliHood[idx]++;
+                lengthCount++;
                 battleMap[idx] = Item.Ship;
                 switch (fightState)
                 {
@@ -127,6 +171,20 @@ namespace BattleshipBot
                     case State.FoundOneEnd:
                         fightState = State.ContinueToAnotherENd;
                         break;
+                    case State.ContinueHit :
+                        if (lengthCount == 5)
+                        {
+                            fightState = State.Explore;
+                            lengthCount = 0;
+                        }
+                        break;
+                    case State.ContinueToAnotherENd:
+                        if (lengthCount == 5)
+                        {
+                            fightState = State.Explore;
+                            lengthCount = 0;
+                        }
+                        break;
                     default:
                         break;
                 }
@@ -134,6 +192,7 @@ namespace BattleshipBot
             }
             else
             {
+                lengthCount = 0;
                 battleMap[idx] = Item.Sea;
                 switch (fightState)
                 {
@@ -193,7 +252,7 @@ namespace BattleshipBot
 
             return RemoveImpossibleOrientation(square, result);
         }
-        
+
         private IGridSquare GetNeighbourSquare(IGridSquare g, Orientation o, int step = 1)
         {
             int col = g.Column;
@@ -242,7 +301,7 @@ namespace BattleshipBot
 
         private bool IsAtCorner(IGridSquare g)
         {
-            var corners = new int[] {0, 9, 90, 99};
+            var corners = new int[] { 0, 9, 90, 99 };
             if (corners.Contains(GridToMap(g)))
                 return true;
 
@@ -318,7 +377,7 @@ namespace BattleshipBot
 
             var percentageMiss = GetPercentOfMissesWithinRange(square, 2);
 
-            return 5 - count ;
+            return 5 - count;
         }
 
         private float GetPercentOfMissesWithinRange(IGridSquare square, int range)
@@ -332,16 +391,16 @@ namespace BattleshipBot
                 for (int c = centerCol - range; c <= centerCol + range; c++)
                 {
                     var idx = r * 10 + centerCol - 1;
-                    
-                    if (! IsOffBoard(MapToGrid(idx)) )
+
+                    if (!IsOffBoard(MapToGrid(idx)))
                     {
                         total++;
-                        if(battleMap[idx] == Item.Sea)
+                        if (battleMap[idx] == Item.Sea)
                             count++;
                     }
                 }
             }
-            return count/total;
+            return count / total;
         }
 
         private List<IGridSquare> GetAllSurroundings(IGridSquare center)
