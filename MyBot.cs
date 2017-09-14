@@ -8,27 +8,31 @@ namespace BattleshipBot
     public class MyBot : IBattleshipsBot
     {
         private IGridSquare lastTarget;
-        private static int boardSize = 100;
-        private item[] battleMap = Enumerable.Repeat(item.fog,boardSize).ToArray();
+        private static int _boardSize = 100;
+        private Item[] battleMap;
 
-        private List<int> enemyLeftLength = new List<int>{5,4,3,3,2};
-        private System.Random rnd = new System.Random();
+        private List<int> enemyLeftLength;
+        private System.Random rnd;
 
-        private List<orientation> possible_ori;
-        private orientation curOrientation;
-        private state fightState = state.explore;
+        private List<Orientation> possibleOri;
+        private Orientation curOrientation;
+        private State fightState;
         private IGridSquare firstHit;
 
         public IEnumerable<IShipPosition> GetShipPositions()
         {
-            lastTarget = null; // Forget all our history when we start a new game
+            enemyLeftLength = new List<int> { 5, 4, 3, 3, 2 };
+            lastTarget = null;
+            fightState = State.Explore;
+            rnd = new System.Random();
+            battleMap = Enumerable.Repeat(Item.Fog, _boardSize).ToArray();
             return new List<IShipPosition>
-				  {
-				    GetShipPosition('B', 4, 'B', 8), // Aircraft Carrier
+                  {
+                    GetShipPosition('B', 4, 'B', 8), // Aircraft Carrier
 				    GetShipPosition('C', 2, 'F', 2), // Battleship
 				    GetShipPosition('E', 6, 'G', 6), // Destroyer
 				    GetShipPosition('H', 2, 'H', 4), // Submarine
-				    GetShipPosition('H', 9, 'I', 9)  // Patrol boat
+				    GetShipPosition('I', 10, 'J', 10)  // Patrol boat
 				  };
         }
 
@@ -46,95 +50,101 @@ namespace BattleshipBot
 
         private IGridSquare GetNextTarget()
         {
-            IGridSquare target = getRandomTarget();
+            IGridSquare target = GetRandomTarget();
             switch (fightState)
             {
-                case state.explore:
-                    target = getRandomTarget();
+                case State.Explore:
+                    target = GetRandomTarget();
                     break;
-                case state.findingDirection:
-                    target = getNeighbourSquare(firstHit, this.possible_ori[0]);
+                case State.FindingDirection:
+                    target = GetNeighbourSquare(firstHit, this.possibleOri[0]);
                     break;
-                case state.continueHit:
-                    target = getNeighbourSquare(lastTarget, curOrientation);
-                    if (isOffBoard(target))
+                case State.ContinueHit:
+                    target = GetNeighbourSquare(lastTarget, curOrientation);
+                    if (ShouldContinue(target))
                     {
-						curOrientation = oppositeOrientation(curOrientation);
-						target = getNeighbourSquare(firstHit, curOrientation);
-                        fightState = state.FoundOneEnd;
+                        curOrientation = OppositeOrientation(curOrientation);
+                        target = GetNeighbourSquare(firstHit, curOrientation);
+                        fightState = State.FoundOneEnd;
                     }
-                       
                     break;
-                case state.FoundOneEnd:
-                    curOrientation = oppositeOrientation(curOrientation);
-                    target = getNeighbourSquare(firstHit, curOrientation);
-					if (isOffBoard(target))
-					{
-                        target = getRandomTarget();
-                        fightState = state.explore;
-					}
-                    break;
-                case state.continueToAnotherENd:
-                    target = getNeighbourSquare(lastTarget, curOrientation);
-                    if (isOffBoard(target))
+                case State.FoundOneEnd:
+                    curOrientation = OppositeOrientation(curOrientation);
+                    target = GetNeighbourSquare(firstHit, curOrientation);
+                    if (ShouldContinue(target))
                     {
-                        target = getRandomTarget();
-                        fightState = state.explore;
+                        target = GetRandomTarget();
+                        fightState = State.Explore;
+                    }
+                    break;
+                case State.ContinueToAnotherENd:
+                    target = GetNeighbourSquare(lastTarget, curOrientation);
+                    if (ShouldContinue(target))
+                    {
+                        target = GetRandomTarget();
+                        fightState = State.Explore;
                     }
                     break;
             }
-
 
             return target;
 
         }
 
+        private bool ShouldContinue(IGridSquare target)
+        {
+            return IsOffBoard(target) || battleMap[GridToMap(target)] == Item.Sea;
+        }
+
         public void HandleShotResult(IGridSquare square, bool wasHit)
         {
-			int idx = gridToMap(square);
-			if(wasHit){
-                battleMap[idx] = item.ship;
+            int idx = GridToMap(square);
+            if (wasHit)
+            {
+                battleMap[idx] = Item.Ship;
                 switch (fightState)
                 {
-                    case state.explore:
+                    case State.Explore:
                         firstHit = square;
-                        this.possible_ori = getPossibleOrientation(square);
-                        fightState = state.findingDirection;
+                        this.possibleOri = GetPossibleOrientation(square);
+                        fightState = State.FindingDirection;
                         break;
 
-                    case state.findingDirection:
-                        fightState = state.continueHit;
-                        curOrientation = this.possible_ori[0];
+                    case State.FindingDirection:
+                        fightState = State.ContinueHit;
+                        curOrientation = this.possibleOri[0];
                         break;
-                    case state.FoundOneEnd:
-                        fightState = state.continueToAnotherENd;
-                        break;
-                    default:
-                        break;
-                }
-
-            }else{
-                battleMap[idx] = item.sea;
-                switch (fightState)
-                {
-                    case state.findingDirection:
-                        possible_ori.RemoveAt(0);
-                        break;
-                    case state.continueHit:
-                        fightState = state.FoundOneEnd;
-                        break;
-                    case state.FoundOneEnd:
-                        fightState = state.explore;
-                        break;
-                    case state.continueToAnotherENd:
-                        fightState = state.explore;
+                    case State.FoundOneEnd:
+                        fightState = State.ContinueToAnotherENd;
                         break;
                     default:
                         break;
                 }
 
             }
-             //Ignore whether we're successful
+            else
+            {
+                battleMap[idx] = Item.Sea;
+                switch (fightState)
+                {
+                    case State.FindingDirection:
+                        possibleOri.RemoveAt(0);
+                        break;
+                    case State.ContinueHit:
+                        fightState = State.FoundOneEnd;
+                        break;
+                    case State.FoundOneEnd:
+                        fightState = State.Explore;
+                        break;
+                    case State.ContinueToAnotherENd:
+                        fightState = State.Explore;
+                        break;
+                    default:
+                        break;
+                }
+
+            }
+            //Ignore whether we're successful
         }
 
         public void HandleOpponentsShot(IGridSquare square)
@@ -144,51 +154,53 @@ namespace BattleshipBot
 
         public string Name => "Not a simple Bot";
 
-        private IGridSquare getRandomTarget(){
+        private IGridSquare GetRandomTarget()
+        {
             List<IGridSquare> candites = new List<IGridSquare> { };
-			for (int i = 0; i < boardSize; i++)
-			{
-                if (battleMap[i] == item.fog)
+            for (int i = 0; i < _boardSize; i++)
+            {
+                if (battleMap[i] == Item.Fog)
                 {
-                   IGridSquare sq = mapToGrid(i);
-	               if(isGoodPick(sq))
-	               {
-						candites.Add(sq);
-					}
-				}
-			}
+                    IGridSquare sq = MapToGrid(i);
+                    if (IsGoodPick(sq))
+                    {
+                        candites.Add(sq);
+                    }
+                }
+            }
 
-            int pick = rnd.Next(0,candites.Count);
+            int pick = rnd.Next(0, candites.Count);
             IGridSquare res = candites[pick];
             return res;
         }
 
-        private List<orientation> getPossibleOrientation(IGridSquare square){
-            List<orientation> result = new List<orientation>(){
-                orientation.North,orientation.East,orientation.South,orientation.West
+        private List<Orientation> GetPossibleOrientation(IGridSquare square)
+        {
+            List<Orientation> result = new List<Orientation>(){
+                Orientation.North,Orientation.East,Orientation.South,Orientation.West
             };
-
-            //possible exception
-            return removeImpossibleOrientation(square, result);
+            
+            return RemoveImpossibleOrientation(square, result);
         }
 
 
-        private IGridSquare getNeighbourSquare(IGridSquare g, orientation o, int step = 1){
+        private IGridSquare GetNeighbourSquare(IGridSquare g, Orientation o, int step = 1)
+        {
             int col = g.Column;
             char row = g.Row;
             switch (o)
             {
-                case orientation.East:
-                    col += step; 
+                case Orientation.East:
+                    col += step;
                     break;
-                case orientation.West:
+                case Orientation.West:
                     col -= step;
                     break;
-                case orientation.North:
-                    row = (char) (row - step);
+                case Orientation.North:
+                    row = (char)(row - step);
                     break;
-                case orientation.South:
-                    row = (char) (row + step);
+                case Orientation.South:
+                    row = (char)(row + step);
                     break;
             }
             GridSquare result = new GridSquare(row, col);
@@ -196,44 +208,41 @@ namespace BattleshipBot
 
         }
 
-        private int gridToMap(IGridSquare g)
+        private int GridToMap(IGridSquare g)
         {
-            return (int)(g.Row-'A')*10 + g.Column-1; 
+            return (int)(g.Row - 'A') * 10 + g.Column - 1;
         }
 
-        private IGridSquare mapToGrid(int square)
+        private IGridSquare MapToGrid(int square)
         {
-			char row = (char)('A' + square / 10);
-			int column = square % 10 + 1;
+            char row = (char)('A' + square / 10);
+            int column = square % 10 + 1;
             return new GridSquare(row, column);
         }
 
 
-        private bool isOffBoard(IGridSquare g)
+        private bool IsOffBoard(IGridSquare g)
         {
-            if(g.Row < 'A' || g.Row > 'J' || g.Column>10 || g.Column<1)
+            if (g.Row < 'A' || g.Row > 'J' || g.Column > 10 || g.Column < 1)
             {
                 return true;
-            }else
-            {
-                return false;
             }
-
+            return false;
         }
 
 
-        private List<orientation> removeImpossibleOrientation(IGridSquare square, List<orientation> os)
-		{
+        private List<Orientation> RemoveImpossibleOrientation(IGridSquare square, List<Orientation> os)
+        {
 
-            List<orientation> result = new List<orientation>();
-            for (int i = 0; i < os.Count; i++ )
+            List<Orientation> result = new List<Orientation>();
+            for (int i = 0; i < os.Count; i++)
             {
-                orientation ori = os.ElementAt(i);
-                IGridSquare poke = getNeighbourSquare(square, ori);
-                if (!isOffBoard(poke))
+                Orientation ori = os.ElementAt(i);
+                IGridSquare poke = GetNeighbourSquare(square, ori);
+                if (!IsOffBoard(poke))
                 {
-                    int idx = gridToMap(poke);
-                    if (battleMap[idx] == item.fog)
+                    int idx = GridToMap(poke);
+                    if (battleMap[idx] == Item.Fog)
                     {
                         result.Add(ori);
                     }
@@ -243,31 +252,64 @@ namespace BattleshipBot
             return result;
         }
 
-        private orientation oppositeOrientation(orientation o)
+        private Orientation OppositeOrientation(Orientation o)
         {
-            switch(o)
+            switch (o)
             {
-                case orientation.South:
-                    return orientation.North;
-                case orientation.North:
-                    return orientation.South;
-                case orientation.West:
-                    return orientation.East;
+                case Orientation.South:
+                    return Orientation.North;
+                case Orientation.North:
+                    return Orientation.South;
+                case Orientation.West:
+                    return Orientation.East;
                 default:
-                    return orientation.West;
+                    return Orientation.West;
             }
         }
 
-        private bool isGoodPick(IGridSquare square)
+        private int GetSquareRank(IGridSquare square)
         {
             // no adjacent ship when pick random target
-            List<IGridSquare> surroundings = getAllSurroundings(square);
+            List<IGridSquare> surroundings = GetAllSurroundings(square);
             foreach (IGridSquare sur in surroundings)
             {
-                if (!isOffBoard(sur))
+                if (!IsOffBoard(sur))
                 {
-                    int idx = gridToMap(sur);
-                    if(battleMap[idx] == item.ship)
+                    int idx = GridToMap(sur);
+                    if (battleMap[idx] == Item.Ship)
+                    {
+                        return 0;
+                    }
+                }
+            }
+            
+            List<IGridSquare> immediate = GetAllImmediateNeighbour(square);
+            int count = 0;
+            foreach (IGridSquare sur in immediate)
+            {
+                int idx = GridToMap(sur);
+                if (IsOffBoard(sur))
+                {
+                    count++;
+                }
+                else if (battleMap[idx] == Item.Sea)
+                {
+                    count++;
+                }
+            }
+            return 5 - count;
+        }
+
+        private bool IsGoodPick(IGridSquare square)
+        {
+            // no adjacent ship when pick random target
+            List<IGridSquare> surroundings = GetAllSurroundings(square);
+            foreach (IGridSquare sur in surroundings)
+            {
+                if (!IsOffBoard(sur))
+                {
+                    int idx = GridToMap(sur);
+                    if (battleMap[idx] == Item.Ship)
                     {
                         return false;
                     }
@@ -275,20 +317,21 @@ namespace BattleshipBot
             }
 
             //don't pick if there are three surrounding sea/boarder
-            List<IGridSquare> immediate = getAllImmediateNeighbour(square);
+            List<IGridSquare> immediate = GetAllImmediateNeighbour(square);
             int count = 0;
             foreach (IGridSquare sur in immediate)
-			{
-                int idx = gridToMap(sur);
-                if (isOffBoard(sur))
-                {
-                    count++;
-                }else if(battleMap[idx] != item.fog)
+            {
+                int idx = GridToMap(sur);
+                if (IsOffBoard(sur))
                 {
                     count++;
                 }
-			}
-            if(count>2)
+                else if (battleMap[idx] != Item.Fog)
+                {
+                    count++;
+                }
+            }
+            if (count > 1)
             {
                 return false;
             }
@@ -296,57 +339,57 @@ namespace BattleshipBot
             return true;
         }
 
-        private List<IGridSquare> getAllSurroundings(IGridSquare center)
+        private List<IGridSquare> GetAllSurroundings(IGridSquare center)
         {
-            
-            int[] surrounding_idx = { -11, -10, -9, -1, +1, +9, +10, +11 };
-            return getAll(center, surrounding_idx);
+
+            int[] surroundingIdx = { -11, -10, -9, -1, +1, +9, +10, +11 };
+            return GetAll(center, surroundingIdx);
         }
 
-        private List<IGridSquare> getAllImmediateNeighbour(IGridSquare center)
+        private List<IGridSquare> GetAllImmediateNeighbour(IGridSquare center)
         {
-			int[] surrounding_idx = { -10, -1, +1, +10};
-			return getAll(center, surrounding_idx);
+            int[] surroundingIdx = { -10, -1, +1, +10 };
+            return GetAll(center, surroundingIdx);
         }
 
-        private List<IGridSquare> getAll(IGridSquare center, int[] idxes)
+        private List<IGridSquare> GetAll(IGridSquare center, int[] idxes)
         {
-			List<IGridSquare> result = new List<IGridSquare>();
-			int cen_idx = gridToMap(center);
-            int[] surrounding_idx = idxes;
+            List<IGridSquare> result = new List<IGridSquare>();
+            int cenIdx = GridToMap(center);
+            int[] surroundingIdx = idxes;
             for (int i = 0; i < idxes.Length; i++)
-			{
-				int idx = cen_idx + surrounding_idx[i];
-				result.Add(mapToGrid(idx));
-			}
-			return result;
+            {
+                int idx = cenIdx + surroundingIdx[i];
+                result.Add(MapToGrid(idx));
+            }
+            return result;
         }
 
     }
 
-    public enum orientation
+    public enum Orientation
     {
-        North=0,
-        South=1,
-        West=2,
-        East=3,
-        unkown
+        North = 0,
+        South = 1,
+        West = 2,
+        East = 3,
+        Unkown
     }
 
-    public enum item
+    public enum Item
     {
-        fog,
-        ship,
-        sea
+        Fog,
+        Ship,
+        Sea
     }
 
-    public enum state
+    public enum State
     {
-        explore,
-        findingDirection,
-        continueHit,
+        Explore,
+        FindingDirection,
+        ContinueHit,
         FoundOneEnd,
-        continueToAnotherENd,
+        ContinueToAnotherENd,
         Finished
     }
 }
