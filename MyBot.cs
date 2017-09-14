@@ -1,6 +1,9 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using Battleships.Player.Interface;
 using System.Linq;
+using System.Threading;
+using System.Xml.Schema;
 
 
 namespace BattleshipBot
@@ -26,6 +29,13 @@ namespace BattleshipBot
             fightState = State.Explore;
             rnd = new System.Random();
             battleMap = Enumerable.Repeat(Item.Fog, _boardSize).ToArray();
+
+            var airCraft = GetShipPosition('B', 4, 'B', 8);
+            var battleship = GetShipPosition('C', 2, 'F', 2);
+            var destroyer = GetShipPosition('E', 6, 'G', 6);
+            var submarine = GetShipPosition('H', 2, 'H', 4);
+            var patrol = GetShipPosition('I', 10, 'J', 10);
+
             return new List<IShipPosition>
                   {
                     GetShipPosition('B', 4, 'B', 8), // Aircraft Carrier
@@ -156,22 +166,23 @@ namespace BattleshipBot
 
         private IGridSquare GetRandomTarget()
         {
-            List<IGridSquare> candites = new List<IGridSquare> { };
+            Dictionary<IGridSquare, float> pickRanks = new Dictionary<IGridSquare, float>();
+            var highestRank = 0.0;
             for (int i = 0; i < _boardSize; i++)
             {
                 if (battleMap[i] == Item.Fog)
                 {
                     IGridSquare sq = MapToGrid(i);
-                    if (IsGoodPick(sq))
-                    {
-                        candites.Add(sq);
-                    }
+                    var rank = GetSquareRank(sq);
+                    highestRank = Math.Max(highestRank, rank);
+                    pickRanks.Add(sq, rank);
                 }
             }
 
-            int pick = rnd.Next(0, candites.Count);
-            IGridSquare res = candites[pick];
-            return res;
+            var onlyThehighest = pickRanks.Where(c => c.Value == highestRank).Select(c => c.Key);
+            var randomPick = rnd.Next(onlyThehighest.Count());
+
+            return onlyThehighest.ElementAt(randomPick);
         }
 
         private List<Orientation> GetPossibleOrientation(IGridSquare square)
@@ -179,11 +190,10 @@ namespace BattleshipBot
             List<Orientation> result = new List<Orientation>(){
                 Orientation.North,Orientation.East,Orientation.South,Orientation.West
             };
-            
+
             return RemoveImpossibleOrientation(square, result);
         }
-
-
+        
         private IGridSquare GetNeighbourSquare(IGridSquare g, Orientation o, int step = 1)
         {
             int col = g.Column;
@@ -230,6 +240,15 @@ namespace BattleshipBot
             return false;
         }
 
+        private bool IsAtCorner(IGridSquare g)
+        {
+            var corners = new int[] {0, 9, 90, 99};
+            if (corners.Contains(GridToMap(g)))
+                return true;
+
+            return false;
+        }
+
 
         private List<Orientation> RemoveImpossibleOrientation(IGridSquare square, List<Orientation> os)
         {
@@ -267,22 +286,21 @@ namespace BattleshipBot
             }
         }
 
-        private int GetSquareRank(IGridSquare square)
+        private float GetSquareRank(IGridSquare square)
         {
             // no adjacent ship when pick random target
             List<IGridSquare> surroundings = GetAllSurroundings(square);
             foreach (IGridSquare sur in surroundings)
             {
-                if (!IsOffBoard(sur))
+                if (!IsOffBoard(sur) && battleMap[GridToMap(sur)] == Item.Ship)
                 {
-                    int idx = GridToMap(sur);
-                    if (battleMap[idx] == Item.Ship)
-                    {
-                        return 0;
-                    }
+                    return 0;
                 }
             }
-            
+
+            if (IsAtCorner(square))
+                return 0;
+
             List<IGridSquare> immediate = GetAllImmediateNeighbour(square);
             int count = 0;
             foreach (IGridSquare sur in immediate)
@@ -290,53 +308,40 @@ namespace BattleshipBot
                 int idx = GridToMap(sur);
                 if (IsOffBoard(sur))
                 {
-                    count++;
+                    //count++;
                 }
                 else if (battleMap[idx] == Item.Sea)
                 {
                     count++;
                 }
             }
-            return 5 - count;
+
+            var percentageMiss = GetPercentOfMissesWithinRange(square, 2);
+
+            return 5 - count ;
         }
 
-        private bool IsGoodPick(IGridSquare square)
+        private float GetPercentOfMissesWithinRange(IGridSquare square, int range)
         {
-            // no adjacent ship when pick random target
-            List<IGridSquare> surroundings = GetAllSurroundings(square);
-            foreach (IGridSquare sur in surroundings)
+            var centerRow = square.Row - 'A';
+            var centerCol = square.Column;
+            var count = 0;
+            var total = 0;
+            for (int r = centerRow - range; r <= centerRow + range; r++)
             {
-                if (!IsOffBoard(sur))
+                for (int c = centerCol - range; c <= centerCol + range; c++)
                 {
-                    int idx = GridToMap(sur);
-                    if (battleMap[idx] == Item.Ship)
+                    var idx = r * 10 + centerCol - 1;
+                    
+                    if (! IsOffBoard(MapToGrid(idx)) )
                     {
-                        return false;
+                        total++;
+                        if(battleMap[idx] == Item.Sea)
+                            count++;
                     }
                 }
             }
-
-            //don't pick if there are three surrounding sea/boarder
-            List<IGridSquare> immediate = GetAllImmediateNeighbour(square);
-            int count = 0;
-            foreach (IGridSquare sur in immediate)
-            {
-                int idx = GridToMap(sur);
-                if (IsOffBoard(sur))
-                {
-                    count++;
-                }
-                else if (battleMap[idx] != Item.Fog)
-                {
-                    count++;
-                }
-            }
-            if (count > 1)
-            {
-                return false;
-            }
-
-            return true;
+            return count/total;
         }
 
         private List<IGridSquare> GetAllSurroundings(IGridSquare center)
