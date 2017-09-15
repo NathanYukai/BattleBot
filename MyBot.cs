@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using Battleships.Player.Interface;
 using System.Linq;
 using System.Threading;
@@ -31,6 +32,7 @@ namespace BattleshipBot
             fightState = State.Explore;
             rnd = new Random();
             battleMap = Enumerable.Repeat(Item.Fog, _boardSize).ToArray();
+            lengthCount = 0;
 
             var airCrafts = new List<IShipPosition>()
             {
@@ -75,11 +77,11 @@ namespace BattleshipBot
 
             return new List<IShipPosition>
                   {
-                    SelectPositionForShip(airCrafts),
-                    SelectPositionForShip(battleships),
+                      SelectPositionForShip(airCrafts),
+                      SelectPositionForShip(battleships),
                       SelectPositionForShip(submarines),
                       SelectPositionForShip(destroyers),
-                    SelectPositionForShip(patrols)
+                      SelectPositionForShip(patrols)
                   };
         }
 
@@ -113,26 +115,33 @@ namespace BattleshipBot
                     break;
                 case State.ContinueHit:
                     target = GetNeighbourSquare(lastTarget, curOrientation);
-                    if (ShouldContinue(target))
+                    if (ShouldNotContinue(target))
                     {
                         curOrientation = OppositeOrientation(curOrientation);
                         target = GetNeighbourSquare(firstHit, curOrientation);
                         fightState = State.FoundOneEnd;
+                        if (ShouldNotContinue(target))
+                        {
+                            Finishedbot(lengthCount);
+                            fightState = State.Explore;
+                        }
                     }
                     break;
                 case State.FoundOneEnd:
                     curOrientation = OppositeOrientation(curOrientation);
                     target = GetNeighbourSquare(firstHit, curOrientation);
-                    if (ShouldContinue(target))
+                    if (ShouldNotContinue(target))
                     {
+                        Finishedbot(lengthCount);
                         target = GetRandomTarget();
                         fightState = State.Explore;
                     }
                     break;
                 case State.ContinueToAnotherENd:
                     target = GetNeighbourSquare(lastTarget, curOrientation);
-                    if (ShouldContinue(target))
+                    if (ShouldNotContinue(target))
                     {
+                        Finishedbot(lengthCount);
                         target = GetRandomTarget();
                         fightState = State.Explore;
                     }
@@ -143,7 +152,7 @@ namespace BattleshipBot
 
         }
 
-        private bool ShouldContinue(IGridSquare target)
+        private bool ShouldNotContinue(IGridSquare target)
         {
             return IsOffBoard(target) || battleMap[GridToMap(target)] == Item.Sea;
         }
@@ -171,18 +180,18 @@ namespace BattleshipBot
                     case State.FoundOneEnd:
                         fightState = State.ContinueToAnotherENd;
                         break;
-                    case State.ContinueHit :
-                        if (lengthCount == 5)
+                    case State.ContinueHit:
+                        if (lengthCount == enemyLeftLength.Max())
                         {
+                            Finishedbot(lengthCount);
                             fightState = State.Explore;
-                            lengthCount = 0;
                         }
                         break;
                     case State.ContinueToAnotherENd:
-                        if (lengthCount == 5)
+                        if (lengthCount == enemyLeftLength.Max())
                         {
+                            Finishedbot(lengthCount);
                             fightState = State.Explore;
-                            lengthCount = 0;
                         }
                         break;
                     default:
@@ -192,7 +201,6 @@ namespace BattleshipBot
             }
             else
             {
-                lengthCount = 0;
                 battleMap[idx] = Item.Sea;
                 switch (fightState)
                 {
@@ -203,9 +211,11 @@ namespace BattleshipBot
                         fightState = State.FoundOneEnd;
                         break;
                     case State.FoundOneEnd:
+                        Finishedbot(lengthCount);
                         fightState = State.Explore;
                         break;
                     case State.ContinueToAnotherENd:
+                        Finishedbot(lengthCount);
                         fightState = State.Explore;
                         break;
                     default:
@@ -219,6 +229,12 @@ namespace BattleshipBot
         public void HandleOpponentsShot(IGridSquare square)
         {
             // Ignore what our opponent does
+        }
+
+        private void Finishedbot(int length)
+        {
+            enemyLeftLength.Remove(length);
+            lengthCount = 0;
         }
 
         public string Name => "Not a simple Bot";
@@ -328,6 +344,22 @@ namespace BattleshipBot
 
             }
             return result;
+        }
+
+        private int GetNumberOfFreeSpaceInDirection(IGridSquare square, Orientation ori)
+        {
+            var count = 0;
+            var head = GetNeighbourSquare(square, ori);
+            while (battleMap[GridToMap(head)] == Item.Fog)
+            {
+                count++;
+                head = GetNeighbourSquare(square, ori);
+            }
+
+            if (battleMap[GridToMap(head)] == Item.Ship)
+                count--;
+
+            return count;
         }
 
         private Orientation OppositeOrientation(Orientation o)
